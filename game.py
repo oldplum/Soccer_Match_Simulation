@@ -173,7 +173,7 @@ class FootballMatchSimulation:
             self.pause()
             self.play_good_chance(attack, defend, custom_label="【机会升级】", count_override="(突破成功)")
         else:
-            self.print_log(f"    - 进攻组织失败。")
+            self.print_log(f"    - 进攻组织失败，球权转换。")
             self.pause()
 
     def resolve_foul(self, foul_type):
@@ -181,10 +181,10 @@ class FootballMatchSimulation:
         try:
             if foul_type == 1:
                 fouling, victim = self.home_name, self.away_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="yellow")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
             else:
                 fouling, victim = self.away_name, self.home_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="yellow")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
             self.pause()
 
             has_penalty, has_injury, has_red = False, False, False
@@ -229,8 +229,8 @@ class FootballMatchSimulation:
         self.print_log(f"    - {kicker} 球员站在点球点前...")
         self.pause()
         
-        # 进球概率 70%
-        if random.random() < (0.7):
+        # 0.7 概率进球
+        if random.random() < 0.7:
             goal = True
         else:
             goal = False
@@ -280,7 +280,7 @@ class FootballMatchSimulation:
             if winner: break
             
         if winner:
-             self.print_log(f"\n★ 比赛结束！{winner} 胜利！", color="red")
+             self.print_log(f"\n★ 比赛结束！{winner} 赢得最终胜利！", color="red")
              self.pause()
 
         rounds = 5
@@ -299,7 +299,7 @@ class FootballMatchSimulation:
         self.print_log(f"全场比赛结束！")
         self.print_log(f"最终比分: {self.home_name} {reg_h} ({h_p}) : ({a_p}) {reg_a} {self.away_name}", color="red")
         self.print_log("="*40)
-        self.gui.set_return_mode() # 【修改】调用返回模式
+        self.gui.set_return_mode() 
 
     def play_half(self, half_name, home_chances, away_chances, start_minute, duration_minutes):
         self.print_log(f"\n=== {half_name} 开始 ===", color="blue")
@@ -387,19 +387,23 @@ class FootballMatchSimulation:
                 if self.score[self.home_name] == self.score[self.away_name]:
                     if self.has_penalty: 
                         self.run_penalty_shootout()
-                        # run_penalty_shootout 内部会调用 set_return_mode，所以这里不用调
                     else: 
                         self.print_log("比赛平局结束！")
-                        self.gui.set_return_mode() # 【修改】平局结束也要显示返回按钮
+                        self.gui.set_return_mode() 
                 else:
                     self.print_log("加时赛结束，决出胜负！", color="red")
-                    self.gui.set_return_mode() # 【修改】加时赛分胜负也要显示返回按钮
+                    self.gui.set_return_mode() 
             else:
-                self.print_log("比赛平局结束！")
-                self.gui.set_return_mode() # 【修改】平局结束也要显示返回按钮
+                # 【修改】如果无加时赛，但有点球大战，则直接进点球
+                if self.has_penalty:
+                    self.print_log("\n常规时间平局，直接进入点球大战！", color="blue")
+                    self.run_penalty_shootout()
+                else:
+                    self.print_log("比赛平局结束！")
+                    self.gui.set_return_mode() 
         else:
              self.print_log("比赛结束！", color="red")
-             self.gui.set_return_mode() # 【修改】常规时间结束显示返回按钮
+             self.gui.set_return_mode() 
 
 
 # ==========================================
