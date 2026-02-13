@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import scrolledtext
+from tkinter import scrolledtext, messagebox, ttk
 import threading
 import time
 import random
@@ -7,7 +7,7 @@ import sys
 from collections import deque
 
 # ==========================================
-# 第一部分：核心比赛逻辑 (已更新至最新版逻辑)
+# 第一部分：核心比赛逻辑
 # ==========================================
 
 class FoulException(Exception):
@@ -16,14 +16,14 @@ class FoulException(Exception):
 
 class FootballMatchSimulation:
     def __init__(self, home_name, away_name, home_data, away_data, 
-                 gui_interface, # 接收 GUI 接口
+                 gui_interface, 
                  has_extra_time=True, has_penalty=True):
         
         self.home_name = home_name
         self.away_name = away_name
         self.home_stats = home_data
         self.away_stats = away_data
-        self.gui = gui_interface # 用于和界面通信
+        self.gui = gui_interface
         
         self.has_extra_time = has_extra_time
         self.has_penalty = has_penalty
@@ -32,12 +32,9 @@ class FootballMatchSimulation:
         
         self.last_number = None
         self.consecutive_count = 0
-        
-        # 突发事件保护机制
         self.in_sudden_event = False
         self.pending_rewards = [] 
 
-    # --- 适配 GUI 的输出与暂停 ---
     def print_log(self, text, color="black"):
         self.gui.append_text(text + "\n", color)
 
@@ -62,7 +59,6 @@ class FootballMatchSimulation:
 
     def draw_number(self):
         num = random.choice([1, 2])
-        # 突发事件中不计数
         if self.in_sudden_event: return num
         
         if num == self.last_number:
@@ -90,17 +86,14 @@ class FootballMatchSimulation:
     def handle_save_rebound(self, attacking_team, defending_team):
         self.print_log(f"    - 【门将扑救】{defending_team} 门将做出关键扑救！球还在禁区！", color="purple")
         self.pause()
-        
         res_clear = self.draw_number()
         if res_clear == 2:
             self.print_log(f"    - 【解围】{defending_team} 后卫大脚将球解围。进攻结束。")
             self.pause()
             return
-        
         self.print_log(f"    - 球没踢远！混乱中...")
         self.pause()
         res_type = self.draw_number()
-        
         if res_type == 2:
             self.print_log(f"    - 【角球】球出了底线，{attacking_team} 获得角球！")
             self.pause()
@@ -109,13 +102,11 @@ class FootballMatchSimulation:
         else:
             self.print_log(f"    - 【补射】{attacking_team} 球员跟进补射！")
             self.pause()
-            
             shot_1 = self.draw_number()
             if shot_1 == 2: 
                 self.print_log(f"    - 哎呀！补射打偏了！")
                 self.pause()
                 return
-            
             shot_2 = self.draw_number()
             if shot_2 == 2:
                 self.score[attacking_team] += 1
@@ -149,19 +140,15 @@ class FootballMatchSimulation:
             self.print_log(f"    - {reason}。")
             self.pause()
             return
-
         self.print_log(f"    - 传球成功！直接起脚射门！")
         self.pause()
-        
         n2 = self.draw_number()
         if n2 != target_shot:
             self.print_log(f"    - 射门打偏了。")
             self.pause()
             return
-
         self.print_log(f"    - 射正了！球向球门飞去...")
         self.pause()
-        
         n3 = self.draw_number()
         if n3 == target_goal:
             self.score[attack] += 1
@@ -174,7 +161,6 @@ class FootballMatchSimulation:
     def play_medium_chance(self, attack, defend, time_str=""):
         is_home = (attack == self.home_name)
         trigger_val = 1 if is_home else 2
-        
         count_str = f"(本场第 {self.match_stats[attack]['med']} 次)"
         display_time = f"[{time_str}] " if time_str else ""
         
@@ -187,7 +173,7 @@ class FootballMatchSimulation:
             self.pause()
             self.play_good_chance(attack, defend, custom_label="【机会升级】", count_override="(突破成功)")
         else:
-            self.print_log(f"    - 进攻组织失败，球权转换。")
+            self.print_log(f"    - 进攻组织失败。")
             self.pause()
 
     def resolve_foul(self, foul_type):
@@ -195,10 +181,10 @@ class FootballMatchSimulation:
         try:
             if foul_type == 1:
                 fouling, victim = self.home_name, self.away_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！检测到连续8个单数！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="red")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="yellow")
             else:
                 fouling, victim = self.away_name, self.home_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！检测到连续8个双数！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="red")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="yellow")
             self.pause()
 
             has_penalty, has_injury, has_red = False, False, False
@@ -218,19 +204,16 @@ class FootballMatchSimulation:
                 if self.draw_number() == 1: has_red = True
             self.pause()
 
-            # 1. 红牌 (另一方获利)
             if has_red:
                 self.print_log(f"    - 🟥 改判红牌！{fouling} 吃到红牌！{victim} 将获得额外好机会(延后)。", color="red")
                 self.pause()
                 self.pending_rewards.append((victim, 'good'))
 
-            # 2. 受伤 (对方减员，犯规方获利)
             if has_injury:
                 self.print_log(f"    - 🚑 担架进场，{victim} 球员受伤。{fouling} 获得战术优势(中等机会)！", color="orange")
                 self.pause()
                 self.pending_rewards.append((fouling, 'med'))
 
-            # 3. 点球
             if has_penalty:
                 self.print_log(f"    - ！！罚点球时刻！！{victim} 主罚点球。", color="red")
                 self.pause()
@@ -246,8 +229,11 @@ class FootballMatchSimulation:
         self.print_log(f"    - {kicker} 球员站在点球点前...")
         self.pause()
         
-        kick_res = self.draw_number()
-        goal = (is_home_kick and kick_res == 1) or (not is_home_kick and kick_res == 2)
+        # 进球概率 70%
+        if random.random() < (0.7):
+            goal = True
+        else:
+            goal = False
             
         if goal:
             self.print_log(f"    - ⚽ GOAL！骗过门将，点球罚进！", color="green")
@@ -275,7 +261,6 @@ class FootballMatchSimulation:
         self.in_sudden_event = True 
         self.print_log("\n=== 点球大战 ===", color="blue")
         self.pause()
-        
         h_p, a_p = 0, 0
         h_att, a_att = 0, 0
         winner = None
@@ -295,7 +280,7 @@ class FootballMatchSimulation:
             if winner: break
             
         if winner:
-             self.print_log(f"\n★ 比赛提前结束！{winner} 胜局已定！", color="red")
+             self.print_log(f"\n★ 比赛结束！{winner} 胜利！", color="red")
              self.pause()
 
         rounds = 5
@@ -314,7 +299,7 @@ class FootballMatchSimulation:
         self.print_log(f"全场比赛结束！")
         self.print_log(f"最终比分: {self.home_name} {reg_h} ({h_p}) : ({a_p}) {reg_a} {self.away_name}", color="red")
         self.print_log("="*40)
-        self.gui.disable_button()
+        self.gui.set_return_mode() # 【修改】调用返回模式
 
     def play_half(self, half_name, home_chances, away_chances, start_minute, duration_minutes):
         self.print_log(f"\n=== {half_name} 开始 ===", color="blue")
@@ -327,7 +312,6 @@ class FootballMatchSimulation:
         for _ in range(away_chances['med']):  initial_actions.append((self.away_name, 'med'))
         
         random.shuffle(initial_actions)
-        # 使用 deque 实现队列
         action_queue = deque(initial_actions)
         
         initial_count = len(action_queue)
@@ -335,7 +319,6 @@ class FootballMatchSimulation:
         current_time = start_minute
         end_minute = start_minute + duration_minutes
         
-        # 核心循环
         while action_queue:
             team, chance_type = action_queue.popleft() 
             current_time += avg_interval * random.uniform(0.6, 1.4)
@@ -349,9 +332,7 @@ class FootballMatchSimulation:
                 if chance_type == 'good': self.play_good_chance(team, defender, time_str=time_str)
                 else: self.play_medium_chance(team, defender, time_str=time_str)
             except FoulException as e:
-                # 捕获突发事件
                 self.resolve_foul(e.number_type)
-                # 检查是否有待处理的奖励机会，加入队列末尾
                 if self.pending_rewards:
                     self.print_log(f"    >>> 突发状况造成的额外机会已添加到本半场剩余时间中 ({len(self.pending_rewards)}个)。", color="orange")
                     self.pause()
@@ -404,13 +385,21 @@ class FootballMatchSimulation:
                 self.play_half("加时赛下半场", {'good': h_g2, 'med': h_m2}, {'good': a_g2, 'med': a_m2}, 105, 15)
                 
                 if self.score[self.home_name] == self.score[self.away_name]:
-                    if self.has_penalty: self.run_penalty_shootout()
-                    else: self.print_log("比赛平局结束！")
+                    if self.has_penalty: 
+                        self.run_penalty_shootout()
+                        # run_penalty_shootout 内部会调用 set_return_mode，所以这里不用调
+                    else: 
+                        self.print_log("比赛平局结束！")
+                        self.gui.set_return_mode() # 【修改】平局结束也要显示返回按钮
+                else:
+                    self.print_log("加时赛结束，决出胜负！", color="red")
+                    self.gui.set_return_mode() # 【修改】加时赛分胜负也要显示返回按钮
             else:
                 self.print_log("比赛平局结束！")
+                self.gui.set_return_mode() # 【修改】平局结束也要显示返回按钮
         else:
              self.print_log("比赛结束！", color="red")
-             self.gui.disable_button()
+             self.gui.set_return_mode() # 【修改】常规时间结束显示返回按钮
 
 
 # ==========================================
@@ -421,43 +410,129 @@ class FootballGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("⚽ 足球比赛模拟器 Pro")
-        self.root.geometry("600x700")
+        self.root.geometry("600x750")
 
-        # 1. 顶部比分板
-        self.frame_top = tk.Frame(root, pady=20, bg="#f0f0f0")
-        self.frame_top.pack(fill=tk.X)
-        
-        self.label_home = tk.Label(self.frame_top, text="主队", font=("Arial", 16, "bold"), bg="#f0f0f0", width=10)
-        self.label_home.pack(side=tk.LEFT, padx=20)
-        
-        self.label_score = tk.Label(self.frame_top, text="0 - 0", font=("Impact", 40), bg="#f0f0f0", fg="#333")
-        self.label_score.pack(side=tk.LEFT, expand=True)
-        
-        self.label_away = tk.Label(self.frame_top, text="客队", font=("Arial", 16, "bold"), bg="#f0f0f0", width=10)
-        self.label_away.pack(side=tk.RIGHT, padx=20)
+        self.main_container = tk.Frame(root)
+        self.main_container.pack(fill="both", expand=True)
 
-        # 2. 中间日志框
-        self.text_area = scrolledtext.ScrolledText(root, font=("Consolas", 11), state='disabled', padx=10, pady=10)
-        self.text_area.pack(expand=True, fill=tk.BOTH, padx=10, pady=5)
+        self.frame_setup = None
+        self.frame_match = None
+
+        self.show_setup_ui()
         
-        # 颜色标签
-        self.text_area.tag_config("red", foreground="red")
-        self.text_area.tag_config("green", foreground="green")
-        self.text_area.tag_config("blue", foreground="blue")
-        self.text_area.tag_config("purple", foreground="purple")
-        self.text_area.tag_config("orange", foreground="#FFA500")
-        self.text_area.tag_config("darkblue", foreground="darkblue")
-
-        # 3. 底部按钮
-        self.btn_next = tk.Button(root, text="继续 (Next)", font=("Arial", 14), command=self.on_click_next, height=2, bg="#4CAF50", fg="white")
-        self.btn_next.pack(fill=tk.X, padx=10, pady=10)
-
-        # 线程控制事件
         self.wait_event = threading.Event()
+        self.label_score = None
+        self.text_area = None
+        self.btn_next = None
+
+    def show_setup_ui(self):
+        self.frame_setup = tk.Frame(self.main_container, pady=20)
+        self.frame_setup.pack(fill="both", expand=True)
+
+        tk.Label(self.frame_setup, text="赛前设置面板", font=("Arial", 20, "bold")).pack(pady=10)
+
+        # 主队
+        frame_h = tk.LabelFrame(self.frame_setup, text="主队设置", font=("Arial", 12), padx=10, pady=10)
+        frame_h.pack(fill="x", padx=20, pady=5)
         
-    def set_teams(self, home, away):
-        self.label_home.config(text=home)
-        self.label_away.config(text=away)
+        tk.Label(frame_h, text="球队名称:").grid(row=0, column=0, sticky="e")
+        self.entry_h_name = tk.Entry(frame_h)
+        self.entry_h_name.insert(0, "成都蓉城")
+        self.entry_h_name.grid(row=0, column=1, sticky="w", padx=5)
+
+        tk.Label(frame_h, text="好机会数:").grid(row=1, column=0, sticky="e")
+        self.entry_h_good = tk.Entry(frame_h, width=5)
+        self.entry_h_good.insert(0, "5")
+        self.entry_h_good.grid(row=1, column=1, sticky="w", padx=5)
+
+        tk.Label(frame_h, text="中等机会:").grid(row=2, column=0, sticky="e")
+        self.entry_h_med = tk.Entry(frame_h, width=5)
+        self.entry_h_med.insert(0, "4")
+        self.entry_h_med.grid(row=2, column=1, sticky="w", padx=5)
+
+        tk.Label(frame_h, text="送礼次数:").grid(row=3, column=0, sticky="e")
+        self.entry_h_gift = tk.Entry(frame_h, width=5)
+        self.entry_h_gift.insert(0, "3")
+        self.entry_h_gift.grid(row=3, column=1, sticky="w", padx=5)
+
+        # 客队
+        frame_a = tk.LabelFrame(self.frame_setup, text="客队设置", font=("Arial", 12), padx=10, pady=10)
+        frame_a.pack(fill="x", padx=20, pady=10)
+
+        tk.Label(frame_a, text="球队名称:").grid(row=0, column=0, sticky="e")
+        self.entry_a_name = tk.Entry(frame_a)
+        self.entry_a_name.insert(0, "上海海港")
+        self.entry_a_name.grid(row=0, column=1, sticky="w", padx=5)
+
+        tk.Label(frame_a, text="好机会数:").grid(row=1, column=0, sticky="e")
+        self.entry_a_good = tk.Entry(frame_a, width=5)
+        self.entry_a_good.insert(0, "6")
+        self.entry_a_good.grid(row=1, column=1, sticky="w", padx=5)
+
+        tk.Label(frame_a, text="中等机会:").grid(row=2, column=0, sticky="e")
+        self.entry_a_med = tk.Entry(frame_a, width=5)
+        self.entry_a_med.insert(0, "2")
+        self.entry_a_med.grid(row=2, column=1, sticky="w", padx=5)
+
+        tk.Label(frame_a, text="送礼次数:").grid(row=3, column=0, sticky="e")
+        self.entry_a_gift = tk.Entry(frame_a, width=5)
+        self.entry_a_gift.insert(0, "5")
+        self.entry_a_gift.grid(row=3, column=1, sticky="w", padx=5)
+        
+        frame_rules = tk.Frame(self.frame_setup)
+        frame_rules.pack(pady=10)
+        self.var_extra = tk.BooleanVar(value=True)
+        self.var_penalty = tk.BooleanVar(value=True)
+        tk.Checkbutton(frame_rules, text="开启加时赛", variable=self.var_extra).pack(side="left", padx=10)
+        tk.Checkbutton(frame_rules, text="开启点球大战", variable=self.var_penalty).pack(side="left", padx=10)
+
+        tk.Button(self.frame_setup, text="开始比赛", font=("Arial", 16, "bold"), bg="#4CAF50", fg="white", 
+                  command=self.start_game).pack(pady=20, ipadx=20)
+
+    def show_match_ui(self, home, away):
+        self.frame_setup.destroy() 
+        self.frame_match = tk.Frame(self.main_container)
+        self.frame_match.pack(fill="both", expand=True)
+
+        frame_top = tk.Frame(self.frame_match, pady=20, bg="#f0f0f0")
+        frame_top.pack(fill="x")
+        
+        tk.Label(frame_top, text=home, font=("Arial", 16, "bold"), bg="#f0f0f0", width=12).pack(side="left", padx=20)
+        self.label_score = tk.Label(frame_top, text="0 - 0", font=("Impact", 40), bg="#f0f0f0", fg="#333")
+        self.label_score.pack(side="left", expand=True)
+        tk.Label(frame_top, text=away, font=("Arial", 16, "bold"), bg="#f0f0f0", width=12).pack(side="right", padx=20)
+
+        self.text_area = scrolledtext.ScrolledText(self.frame_match, font=("Consolas", 11), state='disabled', padx=10, pady=10)
+        self.text_area.pack(expand=True, fill="both", padx=10, pady=5)
+        
+        for color in ["red", "green", "blue", "purple", "orange", "darkblue"]:
+            self.text_area.tag_config(color, foreground=color if color != "orange" else "#FFA500")
+        self.text_area.tag_config("gold", foreground="#B8860B")
+
+        self.btn_next = tk.Button(self.frame_match, text="继续 (Next)", font=("Arial", 14), 
+                                  command=self.on_click_next, height=2, bg="#4CAF50", fg="white")
+        self.btn_next.pack(fill="x", padx=10, pady=10)
+
+    def start_game(self):
+        try:
+            h_name = self.entry_h_name.get()
+            h_stats = [int(self.entry_h_good.get()), int(self.entry_h_med.get()), int(self.entry_h_gift.get())]
+            
+            a_name = self.entry_a_name.get()
+            a_stats = [int(self.entry_a_good.get()), int(self.entry_a_med.get()), int(self.entry_a_gift.get())]
+        except ValueError:
+            messagebox.showerror("输入错误", "机会数据必须是整数！")
+            return
+
+        if not h_name or not a_name:
+            messagebox.showerror("输入错误", "请输入球队名称！")
+            return
+
+        self.show_match_ui(h_name, a_name)
+
+        rules = (self.var_extra.get(), self.var_penalty.get())
+        t = threading.Thread(target=start_game_thread, args=(self, h_name, a_name, h_stats, a_stats, rules), daemon=True)
+        t.start()
 
     def update_scoreboard(self, s1, s2):
         self.root.after(0, lambda: self.label_score.config(text=f"{s1} - {s2}"))
@@ -479,40 +554,36 @@ class FootballGUI:
         self.btn_next.config(state='disabled', text="计算中...", bg="#9E9E9E")
         self.wait_event.set()
 
-    def disable_button(self):
-        self.root.after(0, lambda: self.btn_next.config(state='disabled', text="已结束", bg="#9E9E9E"))
+    def return_to_setup(self):
+        """【新增】销毁比赛界面，回到设置界面"""
+        self.frame_match.destroy()
+        self.show_setup_ui()
+
+    def set_return_mode(self):
+        """【新增】将按钮改为返回模式"""
+        self.root.after(0, lambda: self.btn_next.config(
+            state='normal', 
+            text="返回设置 (Return)", 
+            bg="#2196F3", # 蓝色按钮
+            command=self.return_to_setup
+        ))
 
 
 # ==========================================
-# 主程序入口
+# 线程入口函数
 # ==========================================
 
-def start_game_thread(gui):
-    # 配置
-    home_team = "成都蓉城"
-    home_stats = [5, 4, 3] 
-    
-    away_team = "上海海港"
-    away_stats = [6, 2, 5]  
-    
-    gui.set_teams(home_team, away_team)
-    
-    # 初始化游戏逻辑
+def start_game_thread(gui, h_name, a_name, h_stats, a_stats, rules):
     game = FootballMatchSimulation(
-        home_team, away_team, 
-        home_stats, away_stats, 
+        h_name, a_name, 
+        h_stats, a_stats, 
         gui_interface=gui, 
-        has_extra_time=True, 
-        has_penalty=True
+        has_extra_time=rules[0], 
+        has_penalty=rules[1]
     )
-    
     game.run_match()
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = FootballGUI(root)
-    
-    t = threading.Thread(target=start_game_thread, args=(app,), daemon=True)
-    t.start()
-    
     root.mainloop()
