@@ -227,12 +227,12 @@ class FootballMatchSimulation:
             nature = self.draw_number()
             
             if nature == 1:
-                print(f"    - 裁判指向点球点！(单数-必定点球)")
+                print(f"    - 裁判指向点球点！")
                 has_penalty = True
                 if self.draw_number() == 1: has_injury = True
                 if self.draw_number() == 1: has_red = True
             else:
-                print(f"    - 恶劣犯规！球员受伤倒地！(双数-必定受伤)")
+                print(f"    - 恶劣犯规！球员受伤倒地！")
                 has_injury = True
                 if self.draw_number() == 1: has_penalty = True
                 if self.draw_number() == 1: has_red = True
