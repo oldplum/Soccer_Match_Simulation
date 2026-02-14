@@ -29,17 +29,12 @@ class FootballMatchSimulation:
         self.has_penalty = has_penalty
         self.score = {home_name: 0, away_name: 0}
         
-        # 【修改】初始化详细技术统计数据
+        # 初始化详细技术统计数据
         self.full_stats = {
             home_name: {
-                'attacks': 0,      # 进攻（好+中）
-                'dangerous': 0,    # 危险进攻（好机会，含升级）
-                'on_target': 0,    # 射正
-                'off_target': 0,   # 射偏
-                'corners': 0,      # 角球
-                'penalties': 0,    # 点球（常规）
-                'yellow': 0,       # 黄牌
-                'red': 0           # 红牌
+                'attacks': 0, 'dangerous': 0, 'on_target': 0, 
+                'off_target': 0, 'corners': 0, 'penalties': 0, 
+                'yellow': 0, 'red': 0
             },
             away_name: {
                 'attacks': 0, 'dangerous': 0, 'on_target': 0, 
@@ -47,7 +42,6 @@ class FootballMatchSimulation:
                 'yellow': 0, 'red': 0
             }
         }
-        # 原有的计数器保留用于显示"第x次机会"
         self.match_stats = {home_name: {'good': 0, 'med': 0}, away_name: {'good': 0, 'med': 0}}
         
         self.last_number = None
@@ -77,6 +71,39 @@ class FootballMatchSimulation:
         else:
             return f"{base_m:02d}:{seconds:02d}"
 
+    def parse_goal_time(self, time_str):
+        """【新增】将时间字符串 20:15 转换为 21' """
+        if not time_str: return ""
+        
+        try:
+            if "+" in time_str:
+                # 处理补时: 45:00+01:20 -> 45+2'
+                base_part, extra_part = time_str.split("+")
+                base_min = int(base_part.split(":")[0])
+                
+                e_min, e_sec = map(int, extra_part.split(":"))
+                if e_sec > 0: e_min += 1
+                return f"{base_min}+{e_min}'"
+            else:
+                # 处理常规: 20:15 -> 21'
+                m, s = map(int, time_str.split(":"))
+                if s > 0: m += 1
+                return f"{m}'"
+        except:
+            return time_str
+
+    def record_goal(self, team, time_str):
+        """【新增】记录进球并更新UI"""
+        self.score[team] += 1
+        self.full_stats[team]['on_target'] += 1
+        
+        # 如果有点球大战以外的时间，更新进球列表
+        if time_str:
+            goal_time_display = self.parse_goal_time(time_str)
+            self.gui.add_goal_log(team, goal_time_display)
+            
+        self.log_score()
+
     def draw_number(self):
         num = random.choice([1, 2])
         if self.in_sudden_event: return num
@@ -103,9 +130,8 @@ class FootballMatchSimulation:
         final_med = medium + opponent_gift * ratio_med
         return max(1, int(round(final_good))), max(1, int(round(final_med)))
 
-    def handle_save_rebound(self, attacking_team, defending_team):
+    def handle_save_rebound(self, attacking_team, defending_team, time_str):
         self.print_log(f"    - 【门将扑救】{defending_team} 门将做出关键扑救！球还在禁区！", color="purple")
-        # 【统计】被扑救算射正
         self.full_stats[attacking_team]['on_target'] += 1
         
         self.pause()
@@ -119,12 +145,13 @@ class FootballMatchSimulation:
         res_type = self.draw_number()
         if res_type == 2:
             self.print_log(f"    - 【角球】球出了底线，{attacking_team} 获得角球！")
-            # 【统计】角球+1，危险进攻+1
+            # 【统计】角球
             self.full_stats[attacking_team]['corners'] += 1
             self.full_stats[attacking_team]['dangerous'] += 1
+            self.full_stats[attacking_team]['attacks'] += 1
             
             self.pause()
-            self.play_good_chance(attacking_team, defending_team, custom_label="【角球机会】", count_override="(二次进攻)")
+            self.play_good_chance(attacking_team, defending_team, time_str=time_str, custom_label="【角球机会】", count_override="(二次进攻)")
             return
         else:
             self.print_log(f"    - 【补射】{attacking_team} 球员跟进补射！")
@@ -132,24 +159,19 @@ class FootballMatchSimulation:
             shot_1 = self.draw_number()
             if shot_1 == 2: 
                 self.print_log(f"    - 哎呀！补射打偏了！")
-                # 【统计】补射打偏
                 self.full_stats[attacking_team]['off_target'] += 1
                 self.pause()
                 return
             shot_2 = self.draw_number()
             if shot_2 == 2:
-                self.score[attacking_team] += 1
-                # 【统计】进球算射正
-                self.full_stats[attacking_team]['on_target'] += 1
                 self.print_log(f"    - ⚽ GOAL！！！补射空门得手！", color="green")
-                self.log_score()
+                self.record_goal(attacking_team, time_str)
                 self.pause()
             else:
                 self.print_log(f"    - 神了！门将再次不可思议地扑出了补射！", color="purple")
-                # 【统计】补射被扑算射正
                 self.full_stats[attacking_team]['on_target'] += 1
                 self.pause()
-                self.handle_save_rebound(attacking_team, defending_team)
+                self.handle_save_rebound(attacking_team, defending_team, time_str)
 
     def play_good_chance(self, attack, defend, time_str="", custom_label=None, count_override=None):
         is_home = (attack == self.home_name)
@@ -178,7 +200,6 @@ class FootballMatchSimulation:
         n2 = self.draw_number()
         if n2 != target_shot:
             self.print_log(f"    - 射门打偏了。")
-            # 【统计】射偏
             self.full_stats[attack]['off_target'] += 1
             self.pause()
             return
@@ -186,15 +207,11 @@ class FootballMatchSimulation:
         self.pause()
         n3 = self.draw_number()
         if n3 == target_goal:
-            self.score[attack] += 1
-            # 【统计】进球算射正
-            self.full_stats[attack]['on_target'] += 1
             self.print_log(f"    - ⚽ GOAL！！！！球进了！", color="green")
-            self.log_score()
+            self.record_goal(attack, time_str)
             self.pause()
         elif n3 == target_save:
-            # 扑救统计在 handle_save_rebound 里处理，这里不加以免重复
-            self.handle_save_rebound(attack, defend)
+            self.handle_save_rebound(attack, defend, time_str)
 
     def play_medium_chance(self, attack, defend, time_str=""):
         is_home = (attack == self.home_name)
@@ -208,25 +225,24 @@ class FootballMatchSimulation:
         n1 = self.draw_number()
         if n1 == trigger_val:
             self.print_log(f"    - 漂亮的突破！中等机会转化为了好机会！", color="orange")
-            # 【统计】中等转好机会 -> 危险进攻+1
+            # 【统计】中等转好机会
             self.full_stats[attack]['dangerous'] += 1
             self.pause()
-            self.play_good_chance(attack, defend, custom_label="【机会升级】", count_override="(突破成功)")
+            self.play_good_chance(attack, defend, time_str=time_str, custom_label="【机会升级】", count_override="(突破成功)")
         else:
             self.print_log(f"    - 进攻组织失败，球权转换。")
             self.pause()
 
-    def resolve_foul(self, foul_type):
+    def resolve_foul(self, foul_type, time_str):
         self.in_sudden_event = True
         try:
             if foul_type == 1:
                 fouling, victim = self.home_name, self.away_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！检测到连续8个单数！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
             else:
                 fouling, victim = self.away_name, self.home_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！检测到连续8个双数！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
             
-            # 【统计】初始判定为黄牌
             self.full_stats[fouling]['yellow'] += 1
             
             self.pause()
@@ -250,7 +266,6 @@ class FootballMatchSimulation:
 
             if has_red:
                 self.print_log(f"    - 🟥 改判红牌！{fouling} 吃到红牌！{victim} 将获得额外好机会(延后)。", color="red")
-                # 【统计】红牌+1，黄牌-1（因为是改判）
                 self.full_stats[fouling]['red'] += 1
                 self.full_stats[fouling]['yellow'] -= 1
                 
@@ -264,18 +279,17 @@ class FootballMatchSimulation:
 
             if has_penalty:
                 self.print_log(f"    - ！！罚点球时刻！！{victim} 主罚点球。", color="red")
-                # 【统计】点球次数（常规时间）
                 self.full_stats[victim]['penalties'] += 1
                 
                 self.pause()
-                self.shoot_penalty_kick(victim, fouling, is_shootout=False)
+                self.shoot_penalty_kick(victim, fouling, is_shootout=False, time_str=time_str)
 
             self.print_log(f"    - 突发事件处理完毕，比赛恢复...\n")
             self.pause()
         finally:
             self.in_sudden_event = False
 
-    def shoot_penalty_kick(self, kicker, keeper, is_shootout=False):
+    def shoot_penalty_kick(self, kicker, keeper, is_shootout=False, time_str=""):
         is_home_kick = (kicker == self.home_name)
         self.print_log(f"    - {kicker} 球员站在点球点前...")
         self.pause()
@@ -289,21 +303,21 @@ class FootballMatchSimulation:
         if goal:
             self.print_log(f"    - ⚽ GOAL！骗过门将，点球罚进！", color="green")
             if not is_shootout:
+                self.record_goal(kicker, time_str)
+            else:
+                # 点球大战只更新比分，不记录时间
                 self.score[kicker] += 1
-                # 【统计】点球进球算射正
-                self.full_stats[kicker]['on_target'] += 1
                 self.log_score()
             self.pause()
             return True
         else:
             self.print_log(f"    - ❌ 点球被扑出来了！", color="purple")
-            # 【统计】点球被扑算射正
             if not is_shootout:
                 self.full_stats[kicker]['on_target'] += 1
                 
             self.pause()
             if not is_shootout:
-                self.handle_save_rebound(kicker, keeper)
+                self.handle_save_rebound(kicker, keeper, time_str)
             return False
 
     def check_penalty_winner(self, h_goals, a_goals, h_attempts, a_attempts):
@@ -381,11 +395,12 @@ class FootballMatchSimulation:
             current_time += avg_interval * random.uniform(0.6, 1.4)
             time_str = self.format_time(current_time, start_minute, end_minute)
             
+            self.gui.update_time(time_str)
+            
             # 【统计】记录进攻总数
             self.full_stats[team]['attacks'] += 1
             if chance_type == 'good':
                 self.match_stats[team]['good'] += 1
-                # 【统计】好机会直接算危险进攻
                 self.full_stats[team]['dangerous'] += 1
             else: 
                 self.match_stats[team]['med'] += 1
@@ -395,13 +410,15 @@ class FootballMatchSimulation:
                 if chance_type == 'good': self.play_good_chance(team, defender, time_str=time_str)
                 else: self.play_medium_chance(team, defender, time_str=time_str)
             except FoulException as e:
-                self.resolve_foul(e.number_type)
+                # 【修改】传递 time_str 给 resolve_foul
+                self.resolve_foul(e.number_type, time_str)
                 if self.pending_rewards:
                     self.print_log(f"    >>> 突发状况造成的额外机会已添加到本半场剩余时间中 ({len(self.pending_rewards)}个)。", color="orange")
                     self.pause()
                     for reward in self.pending_rewards: action_queue.append(reward)
                     self.pending_rewards = [] 
 
+        self.gui.update_time(f"{end_minute}:00")
         self.print_log(f"=== {half_name} 结束，比分 {self.home_name} {self.score[self.home_name]} - {self.score[self.away_name]} {self.away_name} ===", color="blue")
         self.pause()
 
@@ -468,8 +485,6 @@ class FootballMatchSimulation:
              self.finish_game()
 
     def finish_game(self):
-        """比赛结束处理"""
-        # 调用 GUI 显示统计数据
         self.gui.show_match_stats(self.score, self.full_stats, self.home_name, self.away_name)
         self.gui.set_return_mode()
 
@@ -494,6 +509,11 @@ class FootballGUI:
         
         self.wait_event = threading.Event()
         self.label_score = None
+        self.label_time = None
+        # 【新增】进球时间标签引用
+        self.label_h_goals = None
+        self.label_a_goals = None
+        
         self.text_area = None
         self.btn_next = None
 
@@ -569,10 +589,27 @@ class FootballGUI:
         frame_top = tk.Frame(self.frame_match, pady=20, bg="#f0f0f0")
         frame_top.pack(fill="x")
         
-        tk.Label(frame_top, text=home, font=("Arial", 16, "bold"), bg="#f0f0f0", width=12).pack(side="left", padx=20)
-        self.label_score = tk.Label(frame_top, text="0 - 0", font=("Impact", 40), bg="#f0f0f0", fg="#333")
-        self.label_score.pack(side="left", expand=True)
-        tk.Label(frame_top, text=away, font=("Arial", 16, "bold"), bg="#f0f0f0", width=12).pack(side="right", padx=20)
+        # 主队区域（左）
+        frame_h = tk.Frame(frame_top, bg="#f0f0f0", width=150)
+        frame_h.pack(side="left", padx=20, fill="y")
+        tk.Label(frame_h, text=home, font=("Arial", 16, "bold"), bg="#f0f0f0").pack(side="top")
+        self.label_h_goals = tk.Label(frame_h, text="", font=("Arial", 10), bg="#f0f0f0", fg="#555")
+        self.label_h_goals.pack(side="top", pady=5)
+
+        # 中间区域（中）
+        frame_c = tk.Frame(frame_top, bg="#f0f0f0")
+        frame_c.pack(side="left", expand=True)
+        self.label_time = tk.Label(frame_c, text="00:00", font=("Arial", 14, "bold"), bg="#f0f0f0", fg="#555")
+        self.label_time.pack(side="top")
+        self.label_score = tk.Label(frame_c, text="0 - 0", font=("Impact", 40), bg="#f0f0f0", fg="#333")
+        self.label_score.pack(side="bottom")
+        
+        # 客队区域（右）
+        frame_a = tk.Frame(frame_top, bg="#f0f0f0", width=150)
+        frame_a.pack(side="right", padx=20, fill="y")
+        tk.Label(frame_a, text=away, font=("Arial", 16, "bold"), bg="#f0f0f0").pack(side="top")
+        self.label_a_goals = tk.Label(frame_a, text="", font=("Arial", 10), bg="#f0f0f0", fg="#555")
+        self.label_a_goals.pack(side="top", pady=5)
 
         self.text_area = scrolledtext.ScrolledText(self.frame_match, font=("Consolas", 11), state='disabled', padx=10, pady=10)
         self.text_area.pack(expand=True, fill="both", padx=10, pady=5)
@@ -584,6 +621,12 @@ class FootballGUI:
         self.btn_next = tk.Button(self.frame_match, text="继续 (Next)", font=("Arial", 14), 
                                   command=self.on_click_next, height=2, bg="#4CAF50", fg="white")
         self.btn_next.pack(fill="x", padx=10, pady=10)
+        
+        # 保存队名用于更新进球榜
+        self.cur_home = home
+        self.cur_away = away
+        self.h_goals_list = []
+        self.a_goals_list = []
 
     def start_game(self):
         try:
@@ -609,6 +652,23 @@ class FootballGUI:
     def update_scoreboard(self, s1, s2):
         self.root.after(0, lambda: self.label_score.config(text=f"{s1} - {s2}"))
 
+    def update_time(self, time_str):
+        self.root.after(0, lambda: self.label_time.config(text=time_str))
+
+    def add_goal_log(self, team, time_display):
+        """【新增】在界面上添加进球时间"""
+        def _update():
+            if team == self.cur_home:
+                self.h_goals_list.append(time_display)
+                # 每5个换行
+                text = "\n".join(["  ".join(self.h_goals_list[i:i+5]) for i in range(0, len(self.h_goals_list), 5)])
+                self.label_h_goals.config(text=text)
+            else:
+                self.a_goals_list.append(time_display)
+                text = "\n".join(["  ".join(self.a_goals_list[i:i+5]) for i in range(0, len(self.a_goals_list), 5)])
+                self.label_a_goals.config(text=text)
+        self.root.after(0, _update)
+
     def append_text(self, text, color="black"):
         def _update():
             self.text_area.config(state='normal')
@@ -627,41 +687,34 @@ class FootballGUI:
         self.wait_event.set()
 
     def return_to_setup(self):
-        """销毁比赛界面，回到设置界面"""
         self.frame_match.destroy()
         self.show_setup_ui()
 
     def set_return_mode(self):
-        """将按钮改为返回模式"""
         self.root.after(0, lambda: self.btn_next.config(
             state='normal', 
             text="返回设置 (Return)", 
-            bg="#2196F3", # 蓝色按钮
+            bg="#2196F3", 
             command=self.return_to_setup
         ))
 
     def show_match_stats(self, score, stats, h_name, a_name):
-        """【新增】展示赛后技术统计"""
         def _show():
             top = tk.Toplevel(self.root)
             top.title("赛后技术统计")
             top.geometry("500x500")
             
-            # 计算控球率 (简单算法：根据进攻次数比例)
             h_att = stats[h_name]['attacks']
             a_att = stats[a_name]['attacks']
             total_att = h_att + a_att
             if total_att == 0:
-                h_poss = 50
-                a_poss = 50
+                h_poss, a_poss = 50, 50
             else:
                 h_poss = int((h_att / total_att) * 100)
                 a_poss = 100 - h_poss
 
-            # 表头
             tk.Label(top, text=f"{h_name}  vs  {a_name}", font=("Arial", 16, "bold")).pack(pady=10)
             
-            # 数据项配置
             metrics = [
                 ("进球", score[h_name], score[a_name]),
                 ("控球率", f"{h_poss}%", f"{a_poss}%"),
@@ -675,18 +728,15 @@ class FootballGUI:
                 ("红牌", stats[h_name]['red'], stats[a_name]['red']),
             ]
             
-            # 使用 Grid 布局显示表格
             frame_table = tk.Frame(top)
             frame_table.pack(pady=10, padx=20)
             
-            # 表头行
             tk.Label(frame_table, text=h_name, font=("Arial", 12, "bold"), fg="blue").grid(row=0, column=0, padx=20, pady=5)
             tk.Label(frame_table, text="数据统计", font=("Arial", 12, "bold")).grid(row=0, column=1, padx=20, pady=5)
             tk.Label(frame_table, text=a_name, font=("Arial", 12, "bold"), fg="red").grid(row=0, column=2, padx=20, pady=5)
             
             ttk.Separator(frame_table, orient='horizontal').grid(row=1, column=0, columnspan=3, sticky="ew", pady=5)
 
-            # 数据行
             for i, (label, val_h, val_a) in enumerate(metrics, start=2):
                 tk.Label(frame_table, text=str(val_h), font=("Arial", 11)).grid(row=i, column=0)
                 tk.Label(frame_table, text=label, font=("Arial", 11)).grid(row=i, column=1)
