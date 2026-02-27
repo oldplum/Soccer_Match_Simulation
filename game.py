@@ -4,6 +4,8 @@ import threading
 import time
 import random
 import sys
+import json
+import os
 from collections import deque
 
 # ==========================================
@@ -72,20 +74,15 @@ class FootballMatchSimulation:
             return f"{base_m:02d}:{seconds:02d}"
 
     def parse_goal_time(self, time_str):
-        """【新增】将时间字符串 20:15 转换为 21' """
         if not time_str: return ""
-        
         try:
             if "+" in time_str:
-                # 处理补时: 45:00+01:20 -> 45+2'
                 base_part, extra_part = time_str.split("+")
                 base_min = int(base_part.split(":")[0])
-                
                 e_min, e_sec = map(int, extra_part.split(":"))
                 if e_sec > 0: e_min += 1
                 return f"{base_min}+{e_min}'"
             else:
-                # 处理常规: 20:15 -> 21'
                 m, s = map(int, time_str.split(":"))
                 if s > 0: m += 1
                 return f"{m}'"
@@ -93,15 +90,11 @@ class FootballMatchSimulation:
             return time_str
 
     def record_goal(self, team, time_str):
-        """【新增】记录进球并更新UI"""
         self.score[team] += 1
         self.full_stats[team]['on_target'] += 1
-        
-        # 如果有点球大战以外的时间，更新进球列表
         if time_str:
             goal_time_display = self.parse_goal_time(time_str)
             self.gui.add_goal_log(team, goal_time_display)
-            
         self.log_score()
 
     def draw_number(self):
@@ -145,7 +138,6 @@ class FootballMatchSimulation:
         res_type = self.draw_number()
         if res_type == 2:
             self.print_log(f"    - 【角球】球出了底线，{attacking_team} 获得角球！")
-            # 【统计】角球
             self.full_stats[attacking_team]['corners'] += 1
             self.full_stats[attacking_team]['dangerous'] += 1
             self.full_stats[attacking_team]['attacks'] += 1
@@ -225,7 +217,6 @@ class FootballMatchSimulation:
         n1 = self.draw_number()
         if n1 == trigger_val:
             self.print_log(f"    - 漂亮的突破！中等机会转化为了好机会！", color="orange")
-            # 【统计】中等转好机会
             self.full_stats[attack]['dangerous'] += 1
             self.pause()
             self.play_good_chance(attack, defend, time_str=time_str, custom_label="【机会升级】", count_override="(突破成功)")
@@ -238,10 +229,10 @@ class FootballMatchSimulation:
         try:
             if foul_type == 1:
                 fouling, victim = self.home_name, self.away_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！检测到连续8个单数！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
             else:
                 fouling, victim = self.away_name, self.home_name
-                self.print_log(f"\n⚡⚡⚡ 比赛中断！检测到连续8个双数！{fouling} 犯规！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
+                self.print_log(f"\n⚡⚡⚡ 比赛中断！被裁判出示黄牌🟨 ！本次原进攻取消！", color="gold")
             
             self.full_stats[fouling]['yellow'] += 1
             
@@ -294,7 +285,6 @@ class FootballMatchSimulation:
         self.print_log(f"    - {kicker} 球员站在点球点前...")
         self.pause()
         
-        # 0.7 概率进球
         if random.random() < 0.7:
             goal = True
         else:
@@ -305,7 +295,6 @@ class FootballMatchSimulation:
             if not is_shootout:
                 self.record_goal(kicker, time_str)
             else:
-                # 点球大战只更新比分，不记录时间
                 self.score[kicker] += 1
                 self.log_score()
             self.pause()
@@ -397,7 +386,6 @@ class FootballMatchSimulation:
             
             self.gui.update_time(time_str)
             
-            # 【统计】记录进攻总数
             self.full_stats[team]['attacks'] += 1
             if chance_type == 'good':
                 self.match_stats[team]['good'] += 1
@@ -410,7 +398,6 @@ class FootballMatchSimulation:
                 if chance_type == 'good': self.play_good_chance(team, defender, time_str=time_str)
                 else: self.play_medium_chance(team, defender, time_str=time_str)
             except FoulException as e:
-                # 【修改】传递 time_str 给 resolve_foul
                 self.resolve_foul(e.number_type, time_str)
                 if self.pending_rewards:
                     self.print_log(f"    >>> 突发状况造成的额外机会已添加到本半场剩余时间中 ({len(self.pending_rewards)}个)。", color="orange")
@@ -504,18 +491,38 @@ class FootballGUI:
 
         self.frame_setup = None
         self.frame_match = None
+        
+        self.history_file = "football_history.json" # 【新增】本地存档文件名
+        self.match_history = self.load_history()    # 【修改】从本地读取历史
 
         self.show_setup_ui()
         
         self.wait_event = threading.Event()
         self.label_score = None
         self.label_time = None
-        # 【新增】进球时间标签引用
         self.label_h_goals = None
         self.label_a_goals = None
         
         self.text_area = None
         self.btn_next = None
+        
+    # 【新增】读取本地存档
+    def load_history(self):
+        if os.path.exists(self.history_file):
+            try:
+                with open(self.history_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except:
+                return []
+        return []
+        
+    # 【新增】保存到本地存档
+    def save_history(self):
+        try:
+            with open(self.history_file, 'w', encoding='utf-8') as f:
+                json.dump(self.match_history, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"保存历史记录失败: {e}")
 
     def show_setup_ui(self):
         self.frame_setup = tk.Frame(self.main_container, pady=20)
@@ -579,12 +586,17 @@ class FootballGUI:
         tk.Checkbutton(frame_rules, text="开启点球大战", variable=self.var_penalty).pack(side="left", padx=10)
 
         tk.Button(self.frame_setup, text="开始比赛", font=("Arial", 16, "bold"), bg="#4CAF50", fg="white", 
-                  command=self.start_game).pack(pady=20, ipadx=20)
+                  command=self.start_game).pack(pady=10, ipadx=20)
+        
+        tk.Button(self.frame_setup, text="查看对战历史", font=("Arial", 12), bg="#9C27B0", fg="white", 
+                  command=self.show_history).pack(pady=5, ipadx=10)
 
     def show_match_ui(self, home, away):
         self.frame_setup.destroy() 
         self.frame_match = tk.Frame(self.main_container)
         self.frame_match.pack(fill="both", expand=True)
+        
+        self.current_match_log = [] 
 
         frame_top = tk.Frame(self.frame_match, pady=20, bg="#f0f0f0")
         frame_top.pack(fill="x")
@@ -622,7 +634,6 @@ class FootballGUI:
                                   command=self.on_click_next, height=2, bg="#4CAF50", fg="white")
         self.btn_next.pack(fill="x", padx=10, pady=10)
         
-        # 保存队名用于更新进球榜
         self.cur_home = home
         self.cur_away = away
         self.h_goals_list = []
@@ -656,11 +667,9 @@ class FootballGUI:
         self.root.after(0, lambda: self.label_time.config(text=time_str))
 
     def add_goal_log(self, team, time_display):
-        """【新增】在界面上添加进球时间"""
         def _update():
             if team == self.cur_home:
                 self.h_goals_list.append(time_display)
-                # 每5个换行
                 text = "\n".join(["  ".join(self.h_goals_list[i:i+5]) for i in range(0, len(self.h_goals_list), 5)])
                 self.label_h_goals.config(text=text)
             else:
@@ -670,6 +679,7 @@ class FootballGUI:
         self.root.after(0, _update)
 
     def append_text(self, text, color="black"):
+        self.current_match_log.append((text, color)) 
         def _update():
             self.text_area.config(state='normal')
             self.text_area.insert(tk.END, text, color)
@@ -699,6 +709,13 @@ class FootballGUI:
         ))
 
     def show_match_stats(self, score, stats, h_name, a_name):
+        history_title = f"{h_name} {score[h_name]} - {score[a_name]} {a_name}"
+        self.match_history.append({
+            "title": history_title,
+            "log": list(self.current_match_log)
+        })
+        self.save_history() # 【修改】比赛结束时触发本地存档
+        
         def _show():
             top = tk.Toplevel(self.root)
             top.title("赛后技术统计")
@@ -745,6 +762,70 @@ class FootballGUI:
             tk.Button(top, text="关闭", command=top.destroy, width=15).pack(pady=20)
 
         self.root.after(0, _show)
+
+    def show_history(self):
+        top = tk.Toplevel(self.root)
+        top.title("对战历史记录")
+        top.geometry("450x400")
+        
+        tk.Label(top, text="历史对战结果", font=("Arial", 14, "bold")).pack(pady=10)
+        
+        listbox = tk.Listbox(top, font=("Arial", 12), selectmode=tk.SINGLE)
+        listbox.pack(fill="both", expand=True, padx=20, pady=5)
+        
+        def refresh():
+            listbox.delete(0, tk.END)
+            for item in self.match_history:
+                listbox.insert(tk.END, item["title"]) 
+                
+        refresh()
+        
+        def delete_item():
+            sel = listbox.curselection()
+            if sel:
+                idx = sel[0]
+                del self.match_history[idx]
+                self.save_history() # 【修改】删除后更新存档
+                refresh()
+            else:
+                messagebox.showwarning("提示", "请先选择一条记录", parent=top)
+                
+        def clear_all():
+            if messagebox.askyesno("确认", "确定要清空所有记录吗？", parent=top):
+                self.match_history.clear()
+                self.save_history() # 【修改】清空后更新存档
+                refresh()
+                
+        def view_details():
+            sel = listbox.curselection()
+            if sel:
+                idx = sel[0]
+                record = self.match_history[idx]
+                
+                detail_top = tk.Toplevel(top)
+                detail_top.title(f"比赛回放: {record['title']}")
+                detail_top.geometry("550x600")
+                
+                txt = scrolledtext.ScrolledText(detail_top, font=("Consolas", 11), state='normal', padx=10, pady=10)
+                txt.pack(expand=True, fill="both", padx=10, pady=10)
+                
+                for color in ["red", "green", "blue", "purple", "orange", "darkblue"]:
+                    txt.tag_config(color, foreground=color if color != "orange" else "#FFA500")
+                txt.tag_config("gold", foreground="#B8860B")
+                
+                for text_content, color_tag in record["log"]:
+                    txt.insert(tk.END, text_content, color_tag)
+                    
+                txt.config(state='disabled')
+            else:
+                messagebox.showwarning("提示", "请先选择一条记录", parent=top)
+                
+        btn_frame = tk.Frame(top)
+        btn_frame.pack(pady=10)
+        tk.Button(btn_frame, text="查看详细", command=view_details, bg="#4CAF50", fg="white").pack(side="left", padx=10)
+        tk.Button(btn_frame, text="删除选中", command=delete_item, bg="#f44336", fg="white").pack(side="left", padx=10)
+        tk.Button(btn_frame, text="清空全部", command=clear_all, bg="#ff9800", fg="white").pack(side="left", padx=10)
+        tk.Button(btn_frame, text="关闭", command=top.destroy).pack(side="left", padx=10)
 
 
 # ==========================================
