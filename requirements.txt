@@ -1,0 +1,6 @@
+# 本项目仅依赖 Python 3.8+ 标准库（tkinter, json, threading, random 等）
+# 无需通过 pip 安装额外第三方依赖。
+#
+# 可选开发/打包工具：
+# pyinstaller>=6.0.0  # 用于打包为独立 .exe 文件
+
