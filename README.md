@@ -15,7 +15,7 @@
 
 单文件极简设计，基于 Python 原生 Tkinter 开发，零第三方依赖。
 
-> 💡 **致谢**：核心推演规则与概率判定思路参考自 B站 UP主 **[@篮足实录](https://space.bilibili.com/)**。
+> 💡 **致谢**：核心推演规则与概率判定思路参考自 B站 UP主 **[@篮足实录](https://www.bilibili.com/video/BV1KY4y197AH?spm_id_from=333.788.recommend_more_video.-1&trackid=web_related_0.router-related-2589621-k2x2j.1787542669174.435&vd_source=dbe43d353ddc75d68e92456ce5b6b8c7)**。
 
 ---
 
